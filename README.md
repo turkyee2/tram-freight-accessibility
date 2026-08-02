@@ -62,7 +62,7 @@ python step10_policy.py     # outputs/final_result.csv → outputs/final_result_
 2. 군집별 참고변수 평균 재확인
 3. 군집1("구조적 압박형") 내부를 `commercial_overlap` 기준으로 A(시간이동형)/B(공간이동형)로 세분화
 4. 군집0/2에 대해서도 정책유형(저위험/C) 라벨 부여
-5. `outputs/final_result_v2.csv` 저장 (최종 정책유형 포함, GIS 시각화 입력용)
+5. `outputs/final_result_v2.csv` 저장 (최종 정책유형 포함)
 
 ### 최종 정책유형 (실행 결과 기준)
 | 유형 | 개수 | 판정 근거 |
@@ -78,10 +78,5 @@ python step10_policy.py     # outputs/final_result.csv → outputs/final_result_
 - 통계적 최적 군집 수는 k=5(실루엣 0.301)이나, 정책 해석 가능성을 고려해 k=3 채택
 - 군집2·군집1-A 일부 포인트의 변수값이 동일하게 나타나는 것은, 분석 포인트 단위와
   원자료의 도로 링크 단위가 달라 여러 포인트가 하나의 측정값을 공유하기 때문
-- 상세 데이터 정제 이력 및 방법론 배경은 `최종_분석결과_종합보고서_v2.docx` 참고
 
-## 알려진 제한사항 / TODO
 
-- `final_result_v2.csv`에 좌표(위도·경도)가 없어 GIS 시각화를 위해서는 `title` 기준으로
-  별도 좌표 테이블과 조인이 필요함
-- 표본 크기가 작은 유형(A유형 5개) 존재 — 서식3에 한계로 명시 예정
