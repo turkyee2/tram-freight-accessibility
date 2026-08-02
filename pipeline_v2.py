@@ -58,7 +58,7 @@ MODEL_COLS = [                       # 군집화 투입 (6개, 순수 연속변�
 CAT_COLS = []                         # Gower 미사용 (사유는 하단 STEP 5 참고)
 
 RESERVE_COLS = ["이면도로 여부", "반경내총면수", "반경100m_단속카메라개수",
-                "반경내주차장개수"]   # 참고용 (모델 미투입, 사후 해석·정책설계용)
+                "반경내주차장개수", "commercial_overlap"]   # 참고용 (모델 미투입, 사후 해석·정책설계용)
 
 NON_NEGATIVE = ["차로 수", "최근접거리(m)", "반경100m_단속카메라개수",
                 "최근접주차장면수", "반경내주차장개수", "반경내총면수"]
@@ -82,6 +82,10 @@ X = df[MODEL_COLS].copy()
 if X.isnull().sum().sum():
     X = X.fillna(X.median(numeric_only=True))
     print("    -> 중앙값으로 대체 (서식3에 기재 필요)")
+
+missing_reserve = [c for c in RESERVE_COLS if c not in df.columns]
+if missing_reserve:
+    print(f"    [!] RESERVE_COLS 중 master_table.csv에 없는 컬럼: {missing_reserve} -> 컬럼명 확인 필요")
 
 
 # ==============================================================
