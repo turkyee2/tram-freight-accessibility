@@ -20,8 +20,8 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import seaborn as sns
-import gower
 
+from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import AgglomerativeClustering
 from sklearn.metrics import silhouette_score
 from scipy.cluster.hierarchy import linkage, dendrogram
@@ -45,22 +45,20 @@ os.makedirs(OUT_DIR, exist_ok=True)
 # ==============================================================
 ID_COLS = ["title", "name", "latitude", "longitude", "도로명", "최근접주차장ID"]
 
-MODEL_COLS = [                       # 군집화 투입 (9개)
+MODEL_COLS = [                       # 군집화 투입 (6개, 순수 연속변수만)
     "차로 수",
     "트램_차로감소율",
-    "이면도로 여부",                  # ← 범주형으로 별도 지정 (아래 CAT_COLS)
     "TTI_차이_상행",
     "TTI_차이_하행",
     "최근접거리(m)",
     "최근접주차장면수",
-    "반경내총면수",
-    "반경100m_단속카메라개수",
     # "상권_업종구성비",            # 확보되면 주석 해제
 ]
 
-CAT_COLS = ["이면도로 여부"]          # Gower 거리에서 범주형으로 처리할 변수
+CAT_COLS = []                         # Gower 미사용 (사유는 하단 STEP 5 참고)
 
-RESERVE_COLS = ["반경내주차장개수"]   # 참고용 (모델 미투입)
+RESERVE_COLS = ["이면도로 여부", "반경내총면수", "반경100m_단속카메라개수",
+                "반경내주차장개수"]   # 참고용 (모델 미투입, 사후 해석·정책설계용)
 
 NON_NEGATIVE = ["차로 수", "최근접거리(m)", "반경100m_단속카메라개수",
                 "최근접주차장면수", "반경내주차장개수", "반경내총면수"]
@@ -147,22 +145,26 @@ else:
 
 
 # ==============================================================
-# STEP 5. Gower 거리행렬 생성
+# STEP 5. 표준화
 # ==============================================================
-cat_mask = np.array([c in CAT_COLS for c in X.columns])
-D = gower.gower_matrix(X, cat_features=cat_mask)
-print(f"\n[5] Gower 거리행렬 생성 완료 ({X.shape[1]}개 변수, 범주형: {CAT_COLS})")
+# 참고: 이면도로 여부(이진)·반경내총면수·단속카메라개수(제로 편중)는
+# 실측 검증 결과 유클리드/Gower 거리 모두에서 거리 계산을 지배해
+# 나머지 연속변수의 변별력을 없애는 것으로 확인되어(88:21, 99:1:9 등
+# 극단적 분할 발생) 군집화 입력에서 제외함. RESERVE_COLS로 보존하여
+# STEP 8 해석 단계·정책 설계 단계에서 계속 활용함.
+scaler = StandardScaler()
+Xs = scaler.fit_transform(X)
+print(f"\n[5] 표준화 완료 - 군집화 투입 변수 {X.shape[1]}개(순수 연속형, PCA 미적용)")
 
 
 # ==============================================================
-# STEP 6. 군집 수 결정 (Gower 거리 기반)
+# STEP 6. 군집 수 결정
 # ==============================================================
-# 덴드로그램용 linkage — precomputed 거리에는 ward 대신 average/complete 사용
-Z = linkage(D[np.triu_indices(len(D), k=1)], method="average")
+Z = linkage(Xs, method="ward")
 
 plt.figure(figsize=(13, 5))
 dendrogram(Z, truncate_mode="lastp", p=30, leaf_rotation=90)
-plt.title("계층적 군집화 덴드로그램 (Gower + Average linkage)")
+plt.title("계층적 군집화 덴드로그램 (Ward)")
 plt.ylabel("병합 거리")
 plt.tight_layout()
 plt.savefig(f"{OUT_DIR}/dendrogram.png", dpi=130)
@@ -170,13 +172,13 @@ plt.close()
 
 sil = {}
 for k in range(2, 7):
-    lab = AgglomerativeClustering(n_clusters=k, metric="precomputed", linkage="average").fit_predict(D)
-    sil[k] = silhouette_score(D, lab, metric="precomputed")
+    lab = AgglomerativeClustering(n_clusters=k, linkage="ward").fit_predict(Xs)
+    sil[k] = silhouette_score(Xs, lab)
 
 plt.figure(figsize=(6, 4))
 plt.plot(list(sil.keys()), list(sil.values()), "o-")
 plt.xlabel("군집 수 (k)"); plt.ylabel("실루엣 점수")
-plt.title("군집 수별 실루엣 점수 (Gower 거리 기준)")
+plt.title("군집 수별 실루엣 점수")
 plt.grid(alpha=.3)
 plt.tight_layout()
 plt.savefig(f"{OUT_DIR}/silhouette.png", dpi=130)
@@ -191,33 +193,30 @@ K = 3   # <- 실루엣 결과 확인 후 직접 조정 (예: BEST_K 그대로 �
 
 
 # ==============================================================
-# STEP 7. 군집화 실행 (계층적, Gower 거리 · 단일 기법)
+# STEP 7. 군집화 실행 (계층적, Ward)
 # ==============================================================
-hier_lab = AgglomerativeClustering(n_clusters=K, metric="precomputed", linkage="average").fit_predict(D)
+hier_lab = AgglomerativeClustering(n_clusters=K, linkage="ward").fit_predict(Xs)
 df["군집_계층적"] = hier_lab
 
-print(f"\n[7] 군집화 완료 (k={K}, Gower+Average linkage)")
+print(f"\n[7] 군집화 완료 (k={K}, Ward linkage)")
 print(pd.Series(hier_lab).value_counts().sort_index())
 
 
 # ==============================================================
 # STEP 8. 군집 해석
 # ==============================================================
-profile = df.groupby("군집_계층적")[X.columns.tolist()].mean().round(3)
+profile_cols = X.columns.tolist() + [c for c in RESERVE_COLS if c in df.columns]
+profile = df.groupby("군집_계층적")[profile_cols].mean().round(3)
 profile["포인트수"] = df.groupby("군집_계층적").size()
 profile.to_csv(f"{OUT_DIR}/cluster_profile.csv", encoding="utf-8-sig")
 
-print("\n[8] 군집별 변수 평균 (해석의 핵심 근거):")
+print("\n[8] 군집별 변수 평균 (해석의 핵심 근거 · 참고변수 포함):")
 print(profile.T.to_string())
 
-# 연속변수만 표준화하여 히트맵(시각화용, 군집화 자체와는 무관)
-from sklearn.preprocessing import StandardScaler
-Xs_vis = StandardScaler().fit_transform(X[cont_cols])
-prof_std = pd.DataFrame(Xs_vis, columns=cont_cols).groupby(hier_lab).mean()
-
+prof_std = pd.DataFrame(Xs, columns=X.columns).groupby(hier_lab).mean()
 plt.figure(figsize=(11, 5))
 sns.heatmap(prof_std.T, annot=True, fmt=".2f", cmap="coolwarm", center=0)
-plt.title("군집별 연속변수 특성 (표준화 값 · 시각화용)")
+plt.title("군집별 변수 특성 (표준화 값 · 빨강=평균보다 높음)")
 plt.xlabel("군집")
 plt.tight_layout()
 plt.savefig(f"{OUT_DIR}/cluster_heatmap.png", dpi=130)
@@ -238,8 +237,8 @@ print(f"""
    boxplot.png           이상치 확인
    corr_heatmap.png      상관행렬(연속변수)
    vif.csv               다중공선성(연속변수)
-   dendrogram.png        군집 병합 과정 (Gower)
-   silhouette.png        군집 수 근거 (Gower)
+   dendrogram.png        군집 병합 과정 (Ward)
+   silhouette.png        군집 수 근거
    cluster_profile.csv   군집별 평균  <- 해석·정책유형 부여용
    cluster_heatmap.png   군집 특성(연속변수, 시각화용)
    final_result.csv      포인트별 결과 <- GIS 담당 전달
