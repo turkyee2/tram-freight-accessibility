@@ -162,9 +162,17 @@ else:
     print("\n[4] VIF 건너뜀 (pip install statsmodels 후 재실행)")
 
 
+import numpy as np
+SKEWED = ["최근접거리(m)", "최근접주차장면수", "반경내총면수", "반경100m_단속카메라개수"]
+for c in SKEWED:
+    if c in X.columns:
+        X[c] = np.log1p(X[c])   # log(1+x), 0을 그대로 0으로 보존하면서 꼬리만 압축
+print("로그변환 적용:", SKEWED)
+
 # ==============================================================
 # STEP 5. 표준화
 # ==============================================================
+
 scaler = StandardScaler()
 Xs = scaler.fit_transform(X)
 print(f"\n[5] 표준화 완료 - 최종 투입 변수 {X.shape[1]}개 (PCA 미적용)")
